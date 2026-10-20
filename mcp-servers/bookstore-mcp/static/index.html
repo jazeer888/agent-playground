@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookstore</title>
+<style>
+  /* Plain CSS, no framework. Enough to be readable, nothing more. */
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; max-width: 960px; margin-inline: auto; color: #1d2a33; background: #f7f8f9; }
+  h1 { margin: 0 0 4px; } .sub { color: #5f6f7a; margin: 0 0 20px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  input, select, button { font: inherit; padding: 8px 10px; border: 1px solid #c9d2d8; border-radius: 6px; background: #fff; }
+  button { cursor: pointer; background: #0b6b85; color: #fff; border-color: #0b6b85; } button:disabled { opacity: .5; cursor: default; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e6eaee; font-size: 14px; }
+  th { background: #eef2f5; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: #5f6f7a; }
+  tr.sel { background: #e2f0f4; } tr[data-id] { cursor: pointer; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: #e1f3e8; color: #1d7a46; } .pill.out { background: #fbe7e3; color: #a8321f; }
+  #msg { min-height: 20px; margin: 10px 0; font-size: 14px; } #msg.err { color: #a8321f; } #msg.ok { color: #1d7a46; }
+  h2 { font-size: 18px; margin: 26px 0 10px; } code { background: #eef2f5; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>Bookstore</h1>
+<p class="sub">This page uses the REST API at <code>/api/...</code>. AI agents use the same data through MCP at <code>/mcp</code>.</p>
+
+<div class="row">
+  <input id="q" placeholder="Search title or author" size="30">
+  <button id="search">Search</button>
+  <button id="all">Show all</button>
+</div>
+
+<table>
+  <thead><tr><th>Id</th><th>Title</th><th>Author</th><th>Year</th><th>Price (INR)</th><th>Stock</th></tr></thead>
+  <tbody id="books"></tbody>
+</table>
+
+<h2>Place an order</h2>
+<div class="row">
+  <span>Book: <strong id="picked">click a row above</strong></span>
+  <input id="qty" type="number" min="1" value="1" style="width:70px">
+  <input id="name" placeholder="Your name" size="18">
+  <button id="buy" disabled>Buy</button>
+</div>
+<div id="msg"></div>
+
+<h2>Order history</h2>
+<table>
+  <thead><tr><th>Order</th><th>Book</th><th>Qty</th><th>Customer</th><th>Total</th><th>Placed at</th></tr></thead>
+  <tbody id="orders"></tbody>
+</table>
+
+<script>
+// Small helper: call the API, turn error JSON into a thrown Error with the message.
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const body = await res.json();
+  if (!res.ok) throw new Error(body.message || body.detail?.[0]?.msg || res.statusText);
+  return body;
+}
+const $ = (id) => document.getElementById(id);
+let selected = null;
+
+function showBooks(books) {
+  $("books").innerHTML = books.map(b => `
+    <tr data-id="${b.id}" data-title="${b.title.replace(/"/g, "&quot;")}" class="${selected === b.id ? "sel" : ""}">
+      <td>${b.id}</td><td>${b.title}</td><td>${b.author}</td><td>${b.year}</td>
+      <td>${b.price.toFixed(0)}</td>
+      <td>${b.stock > 0 ? `<span class="pill">${b.stock}</span>` : `<span class="pill out">sold out</span>`}</td>
+    </tr>`).join("") || `<tr><td colspan="6">No books match.</td></tr>`;
+}
+async function loadAll()      { showBooks(await api("/api/books")); }
+async function loadSearch()   { showBooks(await api("/api/books/search?q=" + encodeURIComponent($("q").value))); }
+async function loadOrders() {
+  const orders = await api("/api/orders");
+  $("orders").innerHTML = orders.map(o => `
+    <tr><td>${o.order_id}</td><td>${o.title}</td><td>${o.quantity}</td><td>${o.customer_name}</td>
+        <td>${o.total.toFixed(0)}</td><td>${o.placed_at}</td></tr>`).join("") || `<tr><td colspan="6">No orders yet.</td></tr>`;
+}
+function say(text, cls) { $("msg").textContent = text; $("msg").className = cls; }
+
+$("books").addEventListener("click", (e) => {
+  const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+  selected = tr.dataset.id;
+  $("picked").textContent = `${selected} - ${tr.dataset.title}`;
+  $("buy").disabled = false;
+  [...$("books").children].forEach(r => r.classList.toggle("sel", r.dataset.id === selected));
+});
+$("search").onclick = loadSearch;
+$("q").addEventListener("keydown", (e) => { if (e.key === "Enter") loadSearch(); });
+$("all").onclick = () => { $("q").value = ""; loadAll(); };
+$("buy").onclick = async () => {
+  try {
+    const order = await api("/api/orders", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ book_id: selected, quantity: Number($("qty").value), customer_name: $("name").value }),
+    });
+    say(`Order ${order.order_id} placed: ${order.quantity} x ${order.title} = ${order.total}`, "ok");
+    await Promise.all([loadAll(), loadOrders()]);
+  } catch (err) { say(err.message, "err"); }
+};
+
+loadAll(); loadOrders();
+</script>
+</body>
+</html>

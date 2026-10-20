@@ -1,0 +1,5 @@
+# Pinned to what this demo was tested with (Python 3.12).
+# mcp 2.x: the server class is MCPServer (FastMCP was its name in 1.x).
+mcp==2.3.0
+fastapi==0.141.1
+uvicorn[standard]==0.54.0
