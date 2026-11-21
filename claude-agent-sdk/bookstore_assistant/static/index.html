@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bookstore assistant</title>
+<style>
+  :root {
+    --page: #f6f2ea; --card: #fffdf8; --ink: #23201b; --soft: #6f685c;
+    --line: #e0d8c8; --accent: #1f6f66; --accent-ink: #ffffff;
+    --user: #e3efec; --warn: #9a5b0b; --warn-bg: #fdf3df; --bad: #a3392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --page: #191714; --card: #22201c; --ink: #ece7dc; --soft: #a39b8c;
+      --line: #38342d; --accent: #5cc0b3; --accent-ink: #10201e;
+      --user: #24332f; --warn: #e9b765; --warn-bg: #33291a; --bad: #ef8f80;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink);
+    font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header, main, form { width: 100%; max-width: 720px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 20px; padding-bottom: 12px; display: flex; align-items: baseline; gap: 12px; }
+  h1 { font: 600 1.35rem/1.2 Georgia, "Iowan Old Style", serif; margin: 0; }
+  #status { font-size: .8rem; color: var(--soft); margin-left: auto; }
+  main { flex: 1; overflow-y: auto; padding-top: 8px; padding-bottom: 16px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 88%; padding: 10px 14px; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .user { align-self: flex-end; background: var(--user); border-bottom-right-radius: 4px; }
+  .bot { align-self: flex-start; background: var(--card); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .empty { color: var(--soft); margin: auto; text-align: center; max-width: 34ch; }
+  details.tool { align-self: flex-start; max-width: 88%; font-size: .8rem; color: var(--soft); }
+  details.tool summary { cursor: pointer; font-family: ui-monospace, Menlo, monospace; }
+  details.tool pre { margin: 6px 0 0; padding: 8px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .fail summary { color: var(--bad); }
+  .approval { align-self: stretch; background: var(--warn-bg); border: 1px solid var(--warn); border-radius: 12px; padding: 12px 14px; }
+  .approval strong { color: var(--warn); display: block; font-size: .78rem; letter-spacing: .04em; text-transform: uppercase; }
+  .approval .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .note { align-self: center; font-size: .78rem; color: var(--soft); }
+  .note.bad { color: var(--bad); }
+  form { display: flex; gap: 8px; padding-top: 10px; padding-bottom: 18px; }
+  input[type=text] {
+    flex: 1; min-width: 0; padding: 11px 14px; font: inherit; color: var(--ink);
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  }
+  button {
+    font: inherit; font-weight: 600; padding: 9px 16px; border-radius: 12px; cursor: pointer;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--accent-ink);
+  }
+  button.quiet { background: transparent; color: var(--ink); border-color: var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bookstore assistant</h1>
+  <span id="status">ready</span>
+</header>
+<main id="log" aria-live="polite">
+  <p class="empty" id="empty">Ask about a book, an author or a price. Orders need your approval before they are placed.</p>
+</main>
+<form id="form">
+  <input type="text" id="text" placeholder="Do you have anything by Frank Herbert?" autocomplete="off" autofocus aria-label="Message">
+  <button id="send">Send</button>
+</form>
+
+<script>
+// Everything the agent says or returns is drawn with textContent, never
+// innerHTML: tool results are outside data and must not become markup.
+const log = document.getElementById("log");
+const form = document.getElementById("form");
+const input = document.getElementById("text");
+const send = document.getElementById("send");
+const statusEl = document.getElementById("status");
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+function add(node) {
+  document.getElementById("empty")?.remove();
+  log.appendChild(node);
+  log.scrollTop = log.scrollHeight;
+  return node;
+}
+function shortName(tool) { return tool.split("__").pop(); }
+
+function postJson(url, body) {
+  return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+let lastTool = null;  // the <details> a tool_result belongs to
+
+const draw = {
+  mcp(e) { statusEl.textContent = `${e.name}: ${e.status}`; },
+  text(e) { add(el("div", "msg bot", e.text)); },
+  tool_call(e) {
+    lastTool = add(el("details", "tool"));
+    lastTool.appendChild(el("summary", "", `tool: ${shortName(e.name)}`));
+    lastTool.appendChild(el("pre", "", `input: ${JSON.stringify(e.input)}`));
+  },
+  tool_result(e) {
+    if (!lastTool) return;
+    if (!e.ok) lastTool.classList.add("fail");
+    lastTool.appendChild(el("pre", "", `${e.ok ? "result" : "error"}: ${e.text}`));
+  },
+  approval(e) {
+    const card = add(el("div", "approval"));
+    card.appendChild(el("strong", "", "Approval needed"));
+    card.appendChild(el("div", "", e.summary));
+    const row = card.appendChild(el("div", "row"));
+    const yes = row.appendChild(el("button", "", "Approve"));
+    const no = row.appendChild(el("button", "quiet", "Decline"));
+    const answer = async (approve) => {
+      yes.disabled = no.disabled = true;
+      const res = await postJson("/api/approve", { id: e.id, approve });
+      row.replaceChildren(el("span", "note", res.ok ? (approve ? "You approved this order." : "You declined this order.") : "This request has expired."));
+    };
+    yes.onclick = () => answer(true);
+    no.onclick = () => answer(false);
+    yes.focus();
+  },
+  permission(e) {
+    if (e.behavior === "deny") add(el("div", "note bad", `Blocked by policy: ${e.message}`));
+  },
+  done(e) {
+    const cost = e.cost == null ? "n/a" : `$${e.cost.toFixed(4)}`;
+    add(el("div", "note", `${e.status} · ${e.turns} turn${e.turns === 1 ? "" : "s"} · session total ~${cost}`));
+  },
+  error(e) { add(el("div", "note bad", e.text)); },
+};
+
+async function ask(text) {
+  add(el("div", "msg user", text));
+  send.disabled = true;
+  statusEl.textContent = "thinking…";
+  try {
+    const res = await postJson("/api/chat", { text });
+    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    // The reply is a stream of JSON lines; draw each event as it arrives.
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for (const line of lines) {
+        if (!line) continue;
+        const event = JSON.parse(line);
+        draw[event.type]?.(event);
+      }
+    }
+  } catch (err) {
+    add(el("div", "note bad", `Could not reach the assistant: ${err.message}`));
+  } finally {
+    send.disabled = false;
+    if (statusEl.textContent === "thinking…") statusEl.textContent = "ready";
+    input.focus();
+  }
+}
+
+form.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const text = input.value.trim();
+  if (!text || send.disabled) return;
+  input.value = "";
+  ask(text);
+});
+</script>
+</body>
+</html>
