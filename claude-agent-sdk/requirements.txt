@@ -1,0 +1,8 @@
+# Pinned to what these lessons were run with (Python 3.12).
+claude-agent-sdk==0.2.187
+python-dotenv==1.2.4
+
+# Step 6 (web chat). Both already arrive with claude-agent-sdk; listed
+# because web.py imports them directly.
+starlette==1.10.0
+uvicorn==0.54.0

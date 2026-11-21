@@ -14,6 +14,7 @@ and, later, authentication.
 | Framework | Sample | What it teaches |
 |---|---|---|
 | [Google ADK](adk/) | `customer_support_agent` | Agent + instruction + one tool, guardrails in callbacks, basic data leak protection, tests without a model |
+| [Claude Agent SDK](claude-agent-sdk/) | `bookstore_assistant` | `query()` vs `ClaudeSDKClient`, MCP tools over HTTP, least-privilege tool lists, human approval for purchases in code, policy tests without a model |
 
 ### MCP servers
 
@@ -33,6 +34,7 @@ raw JSON-RPC and Claude Desktop, with the output to expect.
 agent-playground/
   README.md            this file
   adk/                 Google ADK agents (one folder per agent)
+  claude-agent-sdk/    Claude Agent SDK agents (Python)
   mcp-servers/         MCP servers agents can connect to (one folder per server)
   <framework>/         one folder per framework, each with its own README,
                        requirements.txt and tests
@@ -45,13 +47,14 @@ purpose, so you can read one without knowing the others.
 ## How the pieces fit
 
 ```
-  adk/customer_support_agent ──(MCP over HTTP)──►  mcp-servers/bookstore-mcp :8001/mcp
-  Claude Desktop / Claude Code / MCP Inspector ──►  mcp-servers/weather-mcp   :8002/mcp
+  claude-agent-sdk/bookstore_assistant ──(MCP over HTTP)──►  mcp-servers/bookstore-mcp :8001/mcp
+  Claude Desktop / Claude Code / MCP Inspector ───────────►  mcp-servers/weather-mcp   :8002/mcp
 ```
 
-Today the agent sample uses only `google_search`. The next step is to point an
-agent at these servers through `McpToolset`, then put identity and
-authorisation (HelixID) in front of `/mcp`.
+The Claude Agent SDK sample calls the bookstore today. The ADK sample still
+uses only `google_search`; its next step is to reach these servers through
+`McpToolset`. After that, identity and authorisation (HelixID) go in front
+of `/mcp`.
 
 ## Ground rules for every sample
 
